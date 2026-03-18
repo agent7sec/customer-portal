@@ -13,6 +13,7 @@ export interface UploadFile {
 export interface PresignedUrlResponse {
     uploadUrl: string;
     fileKey: string;
+    analysisId: string;
     expiresAt: Date;
 }
 

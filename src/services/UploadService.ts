@@ -49,6 +49,7 @@ class UploadService {
         return {
             uploadUrl: response.data.upload_url,
             fileKey: response.data.file_key,
+            analysisId: response.data.analysis_id,
             expiresAt: new Date(response.data.expires_at),
         };
     }
@@ -69,11 +70,11 @@ class UploadService {
         });
     }
 
-    async notifyUploadComplete(fileKey: string): Promise<UploadCompleteResponse> {
+    async notifyUploadComplete(analysisId: string, fileKey: string): Promise<UploadCompleteResponse> {
         const headers = await this.getAuthHeaders();
         const response = await axios.post(
             `${config.api.baseUrl}/uploads/complete`,
-            { file_key: fileKey },
+            { analysis_id: analysisId, file_key: fileKey },
             { headers }
         );
         return {

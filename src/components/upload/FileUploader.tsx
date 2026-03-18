@@ -74,12 +74,12 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
 
         try {
             // Get pre-signed URL
-            const { uploadUrl, fileKey } = await uploadService.getPresignedUrl(
+            const { uploadUrl, fileKey, analysisId: preAnalysisId } = await uploadService.getPresignedUrl(
                 file.name,
                 file.type
             );
 
-            updateFile(file.id, { fileKey });
+            updateFile(file.id, { fileKey, analysisId: preAnalysisId });
 
             // Upload to S3 with progress
             await uploadService.uploadToS3(uploadUrl, rawFile, (progress) => {
@@ -87,7 +87,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
             });
 
             // Notify backend
-            const { analysisId } = await uploadService.notifyUploadComplete(fileKey);
+            const { analysisId } = await uploadService.notifyUploadComplete(preAnalysisId, fileKey);
 
             updateFile(file.id, {
                 status: 'completed',

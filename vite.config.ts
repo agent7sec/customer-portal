@@ -17,7 +17,15 @@ export default defineConfig({
     chunkSizeWarningLimit: 500,
   },
   server: {
-    port: 3000,
-    open: true,
+    port: 5173,
+    open: false,
+    host: true,
+    proxy: {
+      '/api': {
+        target: 'http://analysis-engine:3000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
   },
 });
