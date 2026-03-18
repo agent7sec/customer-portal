@@ -6,6 +6,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Customer Portal for Code Analysis and Certification Service" />
     <title>Customer Portal</title>
+    <!-- Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self' 'unsafe-inline';
+      connect-src 'self'
+        https://*.auth0.com
+        https://api.stripe.com
+        https://js.stripe.com;
+      font-src 'self' data:;
+      img-src 'self' data: https:;
+      frame-src https://js.stripe.com https://hooks.stripe.com;
+      frame-ancestors 'none';
+      base-uri 'self';
+      form-action 'self';
+    " />
+    <!-- Prevent clickjacking in older browsers -->
+    <meta http-equiv="X-Frame-Options" content="DENY" />
   </head>
   <body>
     <div id="root"></div>

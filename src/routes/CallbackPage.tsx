@@ -21,8 +21,15 @@ export const CallbackPage = () => {
 
         const processCallback = async () => {
             try {
-                const returnTo = await handleRedirectCallback();
-                navigate(returnTo, { replace: true });
+                const rawReturnTo = await handleRedirectCallback();
+                // Guard against open-redirect: only allow same-origin relative paths
+                const safeReturnTo =
+                    typeof rawReturnTo === 'string' &&
+                        rawReturnTo.startsWith('/') &&
+                        !rawReturnTo.startsWith('//')
+                        ? rawReturnTo
+                        : '/dashboard';
+                navigate(safeReturnTo, { replace: true });
             } catch (error) {
                 console.error('Auth callback error:', error);
                 navigate('/login', { replace: true });
