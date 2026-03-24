@@ -1,42 +1,51 @@
-export class ApiError extends Error {
-    constructor(
-        message: string,
-        public statusCode: number,
-        public code?: string
-    ) {
-        super(message);
-        this.name = 'ApiError';
-    }
+/**
+ * Error types and interfaces for error handling and monitoring
+ */
+
+export interface ErrorInfo {
+  componentStack: string;
 }
 
-export class AuthenticationError extends Error {
-    constructor(message: string = 'Authentication required') {
-        super(message);
-        this.name = 'AuthenticationError';
-    }
+export interface ErrorLog {
+  message: string;
+  stack?: string;
+  componentStack?: string;
+  timestamp: Date;
+  userAgent: string;
+  url: string;
+  userId?: string;
 }
 
-export class ValidationError extends Error {
-    constructor(
-        message: string,
-        public field?: string
-    ) {
-        super(message);
-        this.name = 'ValidationError';
-    }
+export interface PerformanceMetric {
+  name: string;
+  value: number;
+  timestamp: Date;
+  metadata?: Record<string, unknown>;
 }
 
-export class NetworkError extends Error {
-    constructor(message: string = 'Network connection error') {
-        super(message);
-        this.name = 'NetworkError';
-    }
+export class AppError extends Error {
+  constructor(
+    message: string,
+    public code?: string,
+    public statusCode?: number
+  ) {
+    super(message);
+    this.name = 'AppError';
+  }
 }
 
-export const isApiError = (error: unknown): error is ApiError => {
-    return error instanceof ApiError;
-};
 
-export const isAuthError = (error: unknown): error is AuthenticationError => {
-    return error instanceof AuthenticationError;
-};
+/**
+ * Parse API error response
+ */
+export function parseApiError(error: unknown): string {
+  if (error instanceof AppError) {
+    return error.message;
+  }
+  
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String(error.message);
+  }
+  
+  return 'An unexpected error occurred';
+}

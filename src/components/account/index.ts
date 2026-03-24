@@ -1,3 +1,4 @@
 export { ProfileForm } from './ProfileForm';
-export { PasswordResetCard } from './PasswordResetCard';
+export { PasswordChangeForm } from './PasswordChangeForm';
 export { DeleteAccountForm } from './DeleteAccountForm';
+export { PasswordResetCard } from './PasswordResetCard';

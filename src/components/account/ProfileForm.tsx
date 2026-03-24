@@ -1,14 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { Form, Input, Button, Card, notification, Spin, Avatar, Upload, Row, Col } from 'antd';
 import { UserOutlined, PhoneOutlined, BankOutlined, IdcardOutlined } from '@ant-design/icons';
+import { useForm } from '@refinedev/antd';
 import { accountService } from '../../services/AccountService';
 import type { UserProfile, UpdateProfileData } from '../../types/account.types';
 
 export const ProfileForm: React.FC = () => {
-    const [form] = Form.useForm();
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
     const [profile, setProfile] = useState<UserProfile | null>(null);
+    const [loadingProfile, setLoadingProfile] = useState(true);
+
+    const { formProps, saveButtonProps, form } = useForm<UpdateProfileData>({
+        action: 'edit',
+        onMutationSuccess: () => {
+            notification.success({
+                message: 'Success',
+                description: 'Profile updated successfully',
+            });
+        },
+        onMutationError: (error: any) => {
+            notification.error({
+                message: 'Error',
+                description: error?.message || 'Failed to update profile',
+            });
+        },
+    });
 
     useEffect(() => {
         loadProfile();
@@ -25,36 +40,33 @@ export const ProfileForm: React.FC = () => {
                 company: data.company,
                 jobTitle: data.jobTitle,
             });
-        } catch (error) {
+        } catch (error: any) {
             notification.error({
-                title: 'Error',
-                message: 'Failed to load profile',
+                message: 'Error',
+                description: error?.message || 'Failed to load profile',
             });
         } finally {
-            setLoading(false);
+            setLoadingProfile(false);
         }
     };
 
     const handleSubmit = async (values: UpdateProfileData) => {
-        setSaving(true);
         try {
             const updated = await accountService.updateProfile(values);
             setProfile(updated);
-            notification.success({
-                title: 'Success',
-                message: 'Profile updated successfully',
+            form.setFieldsValue({
+                firstName: updated.firstName,
+                lastName: updated.lastName,
+                phone: updated.phone,
+                company: updated.company,
+                jobTitle: updated.jobTitle,
             });
-        } catch (error) {
-            notification.error({
-                title: 'Error',
-                message: 'Failed to update profile',
-            });
-        } finally {
-            setSaving(false);
+        } catch (error: any) {
+            throw error;
         }
     };
 
-    if (loading) {
+    if (loadingProfile) {
         return (
             <div style={{ textAlign: 'center', padding: 50 }}>
                 <Spin size="large" />
@@ -74,7 +86,7 @@ export const ProfileForm: React.FC = () => {
             </div>
 
             <Form
-                form={form}
+                {...formProps}
                 layout="vertical"
                 onFinish={handleSubmit}
                 requiredMark={false}
@@ -84,7 +96,7 @@ export const ProfileForm: React.FC = () => {
                         <Form.Item
                             name="firstName"
                             label="First Name"
-                            rules={[{ required: true, title: 'First name is required' }]}
+                            rules={[{ required: true, message: 'First name is required' }]}
                         >
                             <Input prefix={<UserOutlined />} placeholder="John" />
                         </Form.Item>
@@ -93,7 +105,7 @@ export const ProfileForm: React.FC = () => {
                         <Form.Item
                             name="lastName"
                             label="Last Name"
-                            rules={[{ required: true, title: 'Last name is required' }]}
+                            rules={[{ required: true, message: 'Last name is required' }]}
                         >
                             <Input prefix={<UserOutlined />} placeholder="Doe" />
                         </Form.Item>
@@ -113,7 +125,7 @@ export const ProfileForm: React.FC = () => {
                 </Form.Item>
 
                 <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={saving}>
+                    <Button type="primary" htmlType="submit" {...saveButtonProps}>
                         Save Changes
                     </Button>
                 </Form.Item>

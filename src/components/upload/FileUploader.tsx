@@ -1,243 +1,280 @@
-import React, { useState, useRef } from 'react';
-import { Upload, Button, Progress, Card, List, Typography, Space, notification } from 'antd';
-import {
-    InboxOutlined,
-    DeleteOutlined,
-    ReloadOutlined,
-    CheckCircleOutlined,
-    CloseCircleOutlined,
-    LoadingOutlined,
-} from '@ant-design/icons';
+import React, { useState } from 'react';
+import { Upload, Progress, Alert, List, Button, Typography, Space, Card, theme, notification } from 'antd';
+import { InboxOutlined, DeleteOutlined, FileOutlined, CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons';
+import type { UploadProps } from 'antd';
 import { uploadService } from '../../services/UploadService';
-import type { UploadFile as UploadFileType } from '../../types/upload.types';
+import type { UploadFile } from '../../types/upload.types';
 import { formatFileSize, ALLOWED_FILE_TYPES, MAX_FILE_SIZE } from '../../types/upload.types';
 
 const { Dragger } = Upload;
-const { Text, Paragraph } = Typography;
+const { Text, Title } = Typography;
+const { useToken } = theme;
 
 interface FileUploaderProps {
-    onUploadComplete: (analysisId: string) => void;
-    maxFiles?: number;
+    onUploadComplete?: (analysisId: string) => void;
+    onUploadError?: (error: string) => void;
 }
 
-export const FileUploader: React.FC<FileUploaderProps> = ({
-    onUploadComplete,
-    maxFiles = 1,
-}) => {
-    const [files, setFiles] = useState<UploadFileType[]>([]);
-    const [uploading, setUploading] = useState(false);
-    const rawFilesRef = useRef<Map<string, File>>(new Map());
+interface UploadFileWithNative extends UploadFile {
+    nativeFile?: File;
+}
 
-    const handleBeforeUpload = (file: File) => {
-        if (files.length >= maxFiles) {
-            notification.warning({
-                title: 'Limit Reached',
-                message: `You can only upload ${maxFiles} file(s) at a time`,
+export const FileUploader: React.FC<FileUploaderProps> = ({ onUploadComplete, onUploadError }) => {
+    const { token } = useToken();
+    const [uploadFiles, setUploadFiles] = useState<UploadFileWithNative[]>([]);
+    const [uploading, setUploading] = useState(false);
+
+    const beforeUpload: UploadProps['beforeUpload'] = (file) => {
+        const validation = uploadService.validateFile(file);
+        
+        if (!validation.valid) {
+            notification.error({
+                message: 'File Validation Failed',
+                description: validation.error,
+                placement: 'topRight',
             });
-            return false;
+            onUploadError?.(validation.error || 'File validation failed');
+            return Upload.LIST_IGNORE;
         }
 
-        const validation = uploadService.validateFile(file);
-
-        const uploadFile: UploadFileType = {
-            id: crypto.randomUUID(),
+        const uploadFile: UploadFileWithNative = {
+            id: `${Date.now()}-${file.name}`,
             name: file.name,
             size: file.size,
-            type: file.type || 'application/octet-stream',
-            status: validation.valid ? 'pending' : 'failed',
+            type: file.type,
+            status: 'pending',
             progress: 0,
-            error: validation.error,
+            nativeFile: file,
         };
 
-        if (validation.valid) {
-            rawFilesRef.current.set(uploadFile.id, file);
-        }
-
-        setFiles((prev) => [...prev, uploadFile]);
-        return false; // Prevent auto upload
+        setUploadFiles(prev => [...prev, uploadFile]);
+        handleUpload(file, uploadFile.id);
+        
+        return false; // Prevent default upload behavior
     };
 
-    const updateFile = (id: string, updates: Partial<UploadFileType>) => {
-        setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)));
-    };
-
-    const removeFile = (id: string) => {
-        setFiles((prev) => prev.filter((f) => f.id !== id));
-        rawFilesRef.current.delete(id);
-    };
-
-    const uploadSingleFile = async (file: UploadFileType) => {
-        const rawFile = rawFilesRef.current.get(file.id);
-        if (!rawFile) return;
-
-        updateFile(file.id, { status: 'uploading', progress: 0 });
-
+    const handleUpload = async (file: File, fileId: string) => {
+        setUploading(true);
+        
         try {
+            // Update status to uploading
+            updateFileStatus(fileId, { status: 'uploading', progress: 0 });
+
             // Get pre-signed URL
-            const { uploadUrl, fileKey, analysisId: preAnalysisId } = await uploadService.getPresignedUrl(
+            const presignedData = await uploadService.getPresignedUrl(
                 file.name,
-                file.type
+                file.type || 'application/octet-stream'
             );
 
-            updateFile(file.id, { fileKey, analysisId: preAnalysisId });
-
-            // Upload to S3 with progress
-            await uploadService.uploadToS3(uploadUrl, rawFile, (progress) => {
-                updateFile(file.id, { progress });
+            // Store analysis ID and file key
+            updateFileStatus(fileId, { 
+                analysisId: presignedData.analysisId,
+                fileKey: presignedData.fileKey 
             });
 
-            // Notify backend
-            const { analysisId } = await uploadService.notifyUploadComplete(preAnalysisId, fileKey);
+            // Upload to S3 with progress tracking and automatic retry
+            await uploadService.uploadToS3(
+                presignedData.uploadUrl,
+                file,
+                (percent) => {
+                    updateFileStatus(fileId, { progress: percent });
+                }
+            );
 
-            updateFile(file.id, {
-                status: 'completed',
-                progress: 100,
-                analysisId,
+            // Notify backend of completion
+            await uploadService.notifyUploadComplete(
+                presignedData.analysisId,
+                presignedData.fileKey
+            );
+
+            // Update status to completed
+            updateFileStatus(fileId, { status: 'completed', progress: 100 });
+            
+            notification.success({
+                message: 'Upload Successful',
+                description: `${file.name} has been uploaded successfully`,
+                placement: 'topRight',
             });
+            
+            onUploadComplete?.(presignedData.analysisId);
 
-            rawFilesRef.current.delete(file.id);
-            onUploadComplete(analysisId);
         } catch (error: any) {
-            updateFile(file.id, {
-                status: 'failed',
-                error: error.message || 'Upload failed',
+            const errorMessage = error.response?.data?.message || error.message || 'Upload failed';
+            updateFileStatus(fileId, { 
+                status: 'failed', 
+                error: errorMessage 
             });
-        }
-    };
-
-    const handleStartUpload = async () => {
-        const pendingFiles = files.filter((f) => f.status === 'pending');
-        if (pendingFiles.length === 0) return;
-
-        setUploading(true);
-
-        for (const file of pendingFiles) {
-            await uploadSingleFile(file);
-        }
-
-        setUploading(false);
-    };
-
-    const handleRetry = async (file: UploadFileType) => {
-        const rawFile = rawFilesRef.current.get(file.id);
-        if (!rawFile) {
+            
             notification.error({
-                title: 'Error',
-                message: 'Original file not found. Please add the file again.',
+                message: 'Upload Failed',
+                description: errorMessage,
+                placement: 'topRight',
+                duration: 0, // Don't auto-close error notifications
             });
-            return;
+            
+            onUploadError?.(errorMessage);
+        } finally {
+            setUploading(false);
         }
-
-        setUploading(true);
-        await uploadSingleFile(file);
-        setUploading(false);
     };
 
-    const getStatusIcon = (status: UploadFileType['status']) => {
+    const handleRetry = (fileId: string) => {
+        const file = uploadFiles.find(f => f.id === fileId);
+        if (file?.nativeFile) {
+            updateFileStatus(fileId, { status: 'pending', error: undefined, progress: 0 });
+            handleUpload(file.nativeFile, fileId);
+        }
+    };
+
+    const updateFileStatus = (fileId: string, updates: Partial<UploadFileWithNative>) => {
+        setUploadFiles(prev =>
+            prev.map(file =>
+                file.id === fileId ? { ...file, ...updates } : file
+            )
+        );
+    };
+
+    const handleRemove = async (fileId: string) => {
+        const file = uploadFiles.find(f => f.id === fileId);
+        
+        if (file?.fileKey && file.status !== 'completed') {
+            try {
+                await uploadService.cancelUpload(file.fileKey);
+            } catch (error) {
+                console.error('Failed to cancel upload:', error);
+            }
+        }
+
+        setUploadFiles(prev => prev.filter(f => f.id !== fileId));
+    };
+
+    const getStatusIcon = (status: UploadFile['status']) => {
         switch (status) {
             case 'completed':
-                return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+                return <CheckCircleOutlined style={{ color: token.colorSuccess }} />;
             case 'failed':
-                return <CloseCircleOutlined style={{ color: '#ff4d4f' }} />;
+                return <CloseCircleOutlined style={{ color: token.colorError }} />;
             case 'uploading':
-                return <LoadingOutlined style={{ color: '#1890ff' }} />;
+                return <FileOutlined style={{ color: token.colorPrimary }} />;
             default:
-                return null;
+                return <FileOutlined />;
         }
     };
 
-    const hasPendingFiles = files.some((f) => f.status === 'pending');
+    const uploadProps: UploadProps = {
+        name: 'file',
+        multiple: false,
+        beforeUpload,
+        showUploadList: false,
+        disabled: uploading,
+    };
 
     return (
-        <Card title="Upload Code for Analysis">
-            <Dragger
-                multiple={maxFiles > 1}
-                beforeUpload={handleBeforeUpload}
-                showUploadList={false}
-                disabled={uploading || files.length >= maxFiles}
-                accept={ALLOWED_FILE_TYPES.join(',')}
-            >
-                <p className="ant-upload-drag-icon">
-                    <InboxOutlined />
-                </p>
-                <p className="ant-upload-text">Drag files here or click to browse</p>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                    Supports {ALLOWED_FILE_TYPES.join(', ')} (max {MAX_FILE_SIZE / 1024 / 1024}MB)
-                </Paragraph>
-            </Dragger>
+        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Card>
+                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                    <div>
+                        <Title level={4}>Upload Code for Analysis</Title>
+                        <Text type="secondary">
+                            Upload your code archive for security analysis and certification
+                        </Text>
+                    </div>
 
-            {files.length > 0 && (
-                <List
-                    style={{ marginTop: 16 }}
-                    dataSource={files}
-                    renderItem={(file) => (
-                        <List.Item
-                            actions={[
-                                file.status === 'failed' && (
-                                    <Button
-                                        key="retry"
-                                        icon={<ReloadOutlined />}
-                                        size="small"
-                                        onClick={() => handleRetry(file)}
-                                        disabled={uploading}
-                                    >
-                                        Retry
-                                    </Button>
-                                ),
-                                <Button
-                                    key="delete"
-                                    icon={<DeleteOutlined />}
-                                    size="small"
-                                    danger
-                                    onClick={() => removeFile(file.id)}
-                                    disabled={file.status === 'uploading'}
-                                />,
-                            ].filter(Boolean)}
-                        >
-                            <List.Item.Meta
-                                avatar={getStatusIcon(file.status)}
-                                title={
-                                    <Space>
-                                        <Text>{file.name}</Text>
-                                        <Text type="secondary">({formatFileSize(file.size)})</Text>
-                                    </Space>
-                                }
-                                description={
-                                    <>
-                                        {file.status === 'uploading' && (
-                                            <Progress
-                                                percent={file.progress}
-                                                size="small"
-                                                status="active"
-                                            />
-                                        )}
-                                        {file.status === 'failed' && (
-                                            <Text type="danger">{file.error}</Text>
-                                        )}
-                                        {file.status === 'completed' && (
-                                            <Text type="success">Upload complete</Text>
-                                        )}
-                                        {file.status === 'pending' && (
-                                            <Text type="secondary">Ready to upload</Text>
-                                        )}
-                                    </>
-                                }
-                            />
-                        </List.Item>
-                    )}
-                />
+                    <Alert
+                        message="Supported File Types"
+                        description={
+                            <div>
+                                <Text>Allowed formats: {ALLOWED_FILE_TYPES.join(', ')}</Text>
+                                <br />
+                                <Text>Maximum file size: {formatFileSize(MAX_FILE_SIZE)}</Text>
+                            </div>
+                        }
+                        type="info"
+                        showIcon
+                    />
+
+                    <Dragger {...uploadProps}>
+                        <p className="ant-upload-drag-icon">
+                            <InboxOutlined style={{ color: token.colorPrimary }} />
+                        </p>
+                        <p className="ant-upload-text">
+                            Click or drag file to this area to upload
+                        </p>
+                        <p className="ant-upload-hint">
+                            Support for single file upload. Strictly prohibited from uploading company data or other banned files.
+                        </p>
+                    </Dragger>
+                </Space>
+            </Card>
+
+            {uploadFiles.length > 0 && (
+                <Card title="Upload Queue">
+                    <List
+                        dataSource={uploadFiles}
+                        renderItem={(file) => (
+                            <List.Item
+                                key={file.id}
+                                actions={[
+                                    file.status === 'failed' && (
+                                        <Button
+                                            type="primary"
+                                            icon={<ReloadOutlined />}
+                                            onClick={() => handleRetry(file.id)}
+                                        >
+                                            Retry
+                                        </Button>
+                                    ),
+                                    file.status !== 'uploading' && (
+                                        <Button
+                                            type="text"
+                                            danger
+                                            icon={<DeleteOutlined />}
+                                            onClick={() => handleRemove(file.id)}
+                                        >
+                                            Remove
+                                        </Button>
+                                    ),
+                                ].filter(Boolean)}
+                            >
+                                <List.Item.Meta
+                                    avatar={getStatusIcon(file.status)}
+                                    title={
+                                        <Space>
+                                            <Text>{file.name}</Text>
+                                            <Text type="secondary">({formatFileSize(file.size)})</Text>
+                                        </Space>
+                                    }
+                                    description={
+                                        <Space direction="vertical" style={{ width: '100%' }}>
+                                            {file.status === 'uploading' && (
+                                                <Progress 
+                                                    percent={file.progress} 
+                                                    status="active"
+                                                    size="small"
+                                                />
+                                            )}
+                                            {file.status === 'completed' && (
+                                                <Text type="success">Upload completed successfully</Text>
+                                            )}
+                                            {file.status === 'failed' && (
+                                                <Alert
+                                                    message={file.error || 'Upload failed'}
+                                                    type="error"
+                                                    showIcon
+                                                    style={{ marginTop: 8 }}
+                                                />
+                                            )}
+                                            {file.status === 'pending' && (
+                                                <Text type="secondary">Waiting to upload...</Text>
+                                            )}
+                                        </Space>
+                                    }
+                                />
+                            </List.Item>
+                        )}
+                    />
+                </Card>
             )}
-
-            <Button
-                type="primary"
-                onClick={handleStartUpload}
-                disabled={!hasPendingFiles}
-                loading={uploading}
-                style={{ marginTop: 16 }}
-                block
-            >
-                {uploading ? 'Uploading...' : 'Start Upload'}
-            </Button>
-        </Card>
+        </Space>
     );
 };

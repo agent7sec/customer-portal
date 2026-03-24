@@ -1,78 +1,73 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, ReactNode } from 'react';
 import { Result, Button } from 'antd';
+import { errorLoggingService } from '../../services/ErrorLoggingService';
 
 interface Props {
-    children: ReactNode;
-    fallback?: ReactNode;
-    onError?: (error: Error, errorInfo: ErrorInfo) => void;
+  children: ReactNode;
+  fallback?: ReactNode;
+  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
 }
 
 interface State {
-    hasError: boolean;
-    error?: Error;
-}
-
-export class ErrorBoundary extends Component<Props, State> {
-    state: State = { hasError: false };
-
-    static getDerivedStateFromError(error: Error): State {
-        return { hasError: true, error };
-    }
-
-    componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-        console.error('Error caught by boundary:', error, errorInfo);
-        this.props.onError?.(error, errorInfo);
-    }
-
-    handleReset = () => {
-        this.setState({ hasError: false, error: undefined });
-    };
-
-    handleGoHome = () => {
-        window.location.href = '/';
-    };
-
-    render() {
-        if (this.state.hasError) {
-            if (this.props.fallback) {
-                return this.props.fallback;
-            }
-
-            return (
-                <div style={{ padding: 24 }}>
-                    <Result
-                        status="error"
-                        title="Something went wrong"
-                        subTitle={this.state.error?.message || 'An unexpected error occurred'}
-                        extra={[
-                            <Button key="retry" type="primary" onClick={this.handleReset}>
-                                Try Again
-                            </Button>,
-                            <Button key="home" onClick={this.handleGoHome}>
-                                Go Home
-                            </Button>,
-                        ]}
-                    />
-                </div>
-            );
-        }
-
-        return this.props.children;
-    }
+  hasError: boolean;
+  error?: Error;
 }
 
 /**
- * HOC to wrap components with ErrorBoundary
+ * Error boundary component that catches JavaScript errors in child components
+ * and displays a fallback UI instead of crashing the entire app
  */
-export function withErrorBoundary<P extends object>(
-    WrappedComponent: React.ComponentType<P>,
-    fallback?: ReactNode
-) {
-    return function WithErrorBoundaryWrapper(props: P) {
-        return (
-            <ErrorBoundary fallback={fallback}>
-                <WrappedComponent {...props} />
-            </ErrorBoundary>
-        );
-    };
+export class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+    // Log error to service
+    errorLoggingService.logError(error, errorInfo.componentStack);
+
+    // Call custom error handler if provided
+    if (this.props.onError) {
+      this.props.onError(error, errorInfo);
+    }
+  }
+
+  handleReset = (): void => {
+    this.setState({ hasError: false, error: undefined });
+  };
+
+  render(): ReactNode {
+    if (this.state.hasError) {
+      // Use custom fallback if provided
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
+      // Default error UI
+      return (
+        <div style={{ padding: '50px', textAlign: 'center' }}>
+          <Result
+            status="error"
+            title="Something went wrong"
+            subTitle="We're sorry, but something unexpected happened. Please try again."
+            extra={[
+              <Button type="primary" key="retry" onClick={this.handleReset}>
+                Try Again
+              </Button>,
+              <Button key="home" onClick={() => (window.location.href = '/')}>
+                Go Home
+              </Button>,
+            ]}
+          />
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }

@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Card, Row, Col, Button, Typography, List, Spin, Badge } from 'antd';
+import { useList } from '@refinedev/core';
 import { CheckOutlined, CrownOutlined } from '@ant-design/icons';
-import { subscriptionService } from '../../services/SubscriptionService';
 import type { SubscriptionPlan, Subscription } from '../../types/subscription.types';
 
 const { Title, Text } = Typography;
@@ -15,18 +15,17 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
     onSelectPlan,
     currentSubscription,
 }) => {
-    const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data, isLoading } = useList<SubscriptionPlan>({
+        resource: 'plans',
+        pagination: {
+            current: 1,
+            pageSize: 100,
+        },
+    });
 
-    useEffect(() => {
-        subscriptionService
-            .getPlans()
-            .then((data) => setPlans(data))
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    }, []);
+    const plans = data?.data || [];
 
-    if (loading) {
+    if (isLoading) {
         return (
             <div style={{ textAlign: 'center', padding: 50 }}>
                 <Spin size="large" />
@@ -49,51 +48,55 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
             <Row gutter={24} justify="center">
                 {plans.map((plan) => {
                     const isCurrentPlan = currentSubscription?.planId === plan.id;
+                    const cardContent = (
+                        <Card
+                            hoverable={!isCurrentPlan}
+                            style={{
+                                textAlign: 'center',
+                                borderColor: isCurrentPlan ? '#52c41a' : undefined,
+                                marginBottom: 16,
+                            }}
+                        >
+                            <CrownOutlined style={{ fontSize: 32, color: '#faad14', marginBottom: 16 }} />
+                            <Title level={3}>{plan.name}</Title>
+                            <Text type="secondary">{plan.description}</Text>
+                            <Title level={2} style={{ marginTop: 16, marginBottom: 8 }}>
+                                {formatPrice(plan.price, plan.currency)}
+                                <Text type="secondary" style={{ fontSize: 16 }}>
+                                    /{plan.interval}
+                                </Text>
+                            </Title>
+                            <List
+                                dataSource={plan.features}
+                                renderItem={(feature: string) => (
+                                    <List.Item style={{ justifyContent: 'center', border: 'none', padding: 8 }}>
+                                        <CheckOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                                        {feature}
+                                    </List.Item>
+                                )}
+                                style={{ marginBottom: 24 }}
+                            />
+                            <Button
+                                type="primary"
+                                block
+                                size="large"
+                                onClick={() => onSelectPlan(plan)}
+                                disabled={isCurrentPlan}
+                            >
+                                {isCurrentPlan ? 'Current Plan' : 'Select Plan'}
+                            </Button>
+                        </Card>
+                    );
+
                     return (
                         <Col key={plan.id} xs={24} sm={12} lg={8}>
-                            <Badge.Ribbon
-                                text="Current"
-                                color="green"
-                                style={{ display: isCurrentPlan ? 'block' : 'none' }}
-                            >
-                                <Card
-                                    hoverable={!isCurrentPlan}
-                                    style={{
-                                        textAlign: 'center',
-                                        borderColor: isCurrentPlan ? '#52c41a' : undefined,
-                                        marginBottom: 16,
-                                    }}
-                                >
-                                    <CrownOutlined style={{ fontSize: 32, color: '#faad14', marginBottom: 16 }} />
-                                    <Title level={3}>{plan.name}</Title>
-                                    <Text type="secondary">{plan.description}</Text>
-                                    <Title level={2} style={{ marginTop: 16, marginBottom: 8 }}>
-                                        {formatPrice(plan.price, plan.currency)}
-                                        <Text type="secondary" style={{ fontSize: 16 }}>
-                                            /{plan.interval}
-                                        </Text>
-                                    </Title>
-                                    <List
-                                        dataSource={plan.features}
-                                        renderItem={(feature: string) => (
-                                            <List.Item style={{ justifyContent: 'center', border: 'none', padding: 8 }}>
-                                                <CheckOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                                                {feature}
-                                            </List.Item>
-                                        )}
-                                        style={{ marginBottom: 24 }}
-                                    />
-                                    <Button
-                                        type="primary"
-                                        block
-                                        size="large"
-                                        onClick={() => onSelectPlan(plan)}
-                                        disabled={isCurrentPlan}
-                                    >
-                                        {isCurrentPlan ? 'Current Plan' : 'Select Plan'}
-                                    </Button>
-                                </Card>
-                            </Badge.Ribbon>
+                            {isCurrentPlan ? (
+                                <Badge.Ribbon text="Current" color="green">
+                                    {cardContent}
+                                </Badge.Ribbon>
+                            ) : (
+                                cardContent
+                            )}
                         </Col>
                     );
                 })}

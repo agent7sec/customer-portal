@@ -20,3 +20,14 @@ export interface UpdateProfileData {
     company?: string;
     jobTitle?: string;
 }
+
+export interface ChangePasswordData {
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+}
+
+export interface UpdateEmailData {
+    newEmail: string;
+    password: string;
+}

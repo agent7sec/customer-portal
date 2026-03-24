@@ -1,65 +1,74 @@
-import axios from 'axios';
-import { auth0Service } from './Auth0Service';
-import { config } from '../config/env';
+import { apiClient } from '../providers/apiProvider';
 import type { Certificate, CertificateDownloadResponse } from '../types/certificate.types';
 
-class CertificateService {
-    private async getHeaders(): Promise<Record<string, string>> {
-        const tokens = auth0Service.getTokens() || (await auth0Service.refreshSession());
+/**
+ * Service for certificate operations
+ * Handles certificate retrieval and secure download with pre-signed URLs
+ */
+export class CertificateService {
+    /**
+     * Get all certificates for the current user
+     */
+    async getCertificates(params?: {
+        page?: number;
+        limit?: number;
+        analysisId?: string;
+    }): Promise<{ data: Certificate[]; total: number }> {
+        const response = await apiClient.get('/certificates', { params });
         return {
-            Authorization: `Bearer ${tokens.accessToken}`,
-            'Content-Type': 'application/json',
+            data: response.data || response.items || [],
+            total: response.total || response.data?.length || 0,
         };
     }
 
-    async getCertificates(): Promise<Certificate[]> {
-        const headers = await this.getHeaders();
-        const response = await axios.get(`${config.api.baseUrl}/certificates`, { headers });
-        return response.data.map(this.mapCertificate);
-    }
-
+    /**
+     * Get a specific certificate by ID
+     */
     async getCertificate(id: string): Promise<Certificate> {
-        const headers = await this.getHeaders();
-        const response = await axios.get(`${config.api.baseUrl}/certificates/${id}`, { headers });
-        return this.mapCertificate(response.data);
+        const response = await apiClient.get(`/certificates/${id}`);
+        return response.data || response;
     }
 
-    async getDownloadUrl(id: string): Promise<CertificateDownloadResponse> {
-        const headers = await this.getHeaders();
-        const response = await axios.get(
-            `${config.api.baseUrl}/certificates/${id}/download`,
-            { headers }
-        );
+    /**
+     * Request a secure download URL for a certificate
+     * Returns a pre-signed S3 URL with time expiration
+     */
+    async getDownloadUrl(certificateId: string): Promise<CertificateDownloadResponse> {
+        const response = await apiClient.post(`/certificates/${certificateId}/download`);
         return {
-            url: response.data.url,
-            expiresAt: new Date(response.data.expires_at),
+            url: response.url || response.data?.url,
+            expiresAt: new Date(response.expiresAt || response.data?.expiresAt),
         };
     }
 
-    async downloadCertificate(id: string, fileName?: string): Promise<void> {
-        const { url } = await this.getDownloadUrl(id);
+    /**
+     * Download a certificate file
+     * Validates authorization and initiates download
+     */
+    async downloadCertificate(certificateId: string, fileName: string): Promise<void> {
+        // Get pre-signed URL from backend
+        const { url } = await this.getDownloadUrl(certificateId);
 
-        // Create temporary link and trigger download
+        // Create a temporary anchor element to trigger download
         const link = document.createElement('a');
         link.href = url;
-        link.download = fileName || `certificate-${id}.pdf`;
-        link.target = '_blank';
+        link.download = fileName;
+        link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     }
 
-    private mapCertificate(data: any): Certificate {
-        return {
-            id: data.id,
-            analysisId: data.analysis_id,
-            userId: data.user_id,
-            fileName: data.file_name,
-            generatedAt: new Date(data.generated_at),
-            expiresAt: data.expires_at ? new Date(data.expires_at) : undefined,
-            fileSize: data.file_size,
-            downloadCount: data.download_count,
-        };
+    /**
+     * Validate if user is authorized to download a certificate
+     */
+    async validateDownloadAuthorization(certificateId: string): Promise<boolean> {
+        try {
+            await apiClient.get(`/certificates/${certificateId}/validate`);
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 }
 

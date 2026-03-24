@@ -1,126 +1,154 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Button, Typography, Space, notification, Card, Empty } from 'antd';
-import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
-import { certificateService } from '../../services/CertificateService';
+import React from 'react';
+import { Table, Tag, Descriptions, Space, Typography, Tooltip } from 'antd';
+import { FileTextOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { useTable } from '@refinedev/antd';
 import type { Certificate } from '../../types/certificate.types';
-import { formatFileSize } from '../../types/upload.types';
+import { DownloadButton } from './DownloadButton';
 
-const { Title } = Typography;
+const { Text } = Typography;
 
+/**
+ * Certificate list component with Refine integration
+ * Displays certificates in a table with download functionality
+ */
 export const CertificateList: React.FC = () => {
-    const [certificates, setCertificates] = useState<Certificate[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [downloading, setDownloading] = useState<string | null>(null);
-
-    useEffect(() => {
-        loadCertificates();
-    }, []);
-
-    const loadCertificates = async () => {
-        setLoading(true);
-        try {
-            const data = await certificateService.getCertificates();
-            setCertificates(data);
-        } catch (error) {
-            notification.error({
-                title: 'Error',
-                message: 'Failed to load certificates',
-            });
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleDownload = async (certificate: Certificate) => {
-        setDownloading(certificate.id);
-        try {
-            await certificateService.downloadCertificate(certificate.id, certificate.fileName);
-            notification.success({
-                title: 'Download Started',
-                message: 'Your certificate is being downloaded.',
-            });
-        } catch (error) {
-            notification.error({
-                title: 'Download Failed',
-                message: 'Please try again later.',
-            });
-        } finally {
-            setDownloading(null);
-        }
-    };
+    const { tableProps } = useTable<Certificate>({
+        resource: 'certificates',
+        pagination: {
+            pageSize: 10,
+        },
+        sorters: {
+            initial: [
+                {
+                    field: 'generatedAt',
+                    order: 'desc',
+                },
+            ],
+        },
+    });
 
     const columns = [
         {
-            title: 'File Name',
+            title: 'Certificate',
             dataIndex: 'fileName',
             key: 'fileName',
-            ellipsis: true,
+            render: (fileName: string) => (
+                <Space>
+                    <FileTextOutlined style={{ fontSize: '18px', color: '#1890ff' }} />
+                    <Text strong>{fileName}</Text>
+                </Space>
+            ),
+        },
+        {
+            title: 'Analysis ID',
+            dataIndex: 'analysisId',
+            key: 'analysisId',
+            render: (analysisId: string) => (
+                <Tooltip title="Click to view analysis details">
+                    <Text copyable={{ text: analysisId }} code>
+                        {analysisId.substring(0, 8)}...
+                    </Text>
+                </Tooltip>
+            ),
         },
         {
             title: 'Generated',
             dataIndex: 'generatedAt',
             key: 'generatedAt',
-            width: 150,
-            render: (date: Date) => new Date(date).toLocaleDateString(),
+            render: (date: Date) => {
+                const generatedDate = new Date(date);
+                return (
+                    <Space>
+                        <ClockCircleOutlined />
+                        <Text>{generatedDate.toLocaleDateString()}</Text>
+                        <Text type="secondary">{generatedDate.toLocaleTimeString()}</Text>
+                    </Space>
+                );
+            },
+            sorter: true,
         },
         {
-            title: 'Size',
+            title: 'File Size',
             dataIndex: 'fileSize',
             key: 'fileSize',
-            width: 100,
-            render: (size: number) => formatFileSize(size),
+            render: (size: number) => {
+                const sizeInKB = (size / 1024).toFixed(2);
+                const sizeInMB = (size / (1024 * 1024)).toFixed(2);
+                return (
+                    <Text>
+                        {size > 1024 * 1024 ? `${sizeInMB} MB` : `${sizeInKB} KB`}
+                    </Text>
+                );
+            },
         },
         {
-            title: 'Downloads',
-            dataIndex: 'downloadCount',
-            key: 'downloadCount',
-            width: 100,
-            render: (count: number | undefined) => count ?? 0,
+            title: 'Status',
+            key: 'status',
+            render: (record: Certificate) => {
+                const now = new Date();
+                const expiresAt = record.expiresAt ? new Date(record.expiresAt) : null;
+                const isExpired = expiresAt && expiresAt < now;
+
+                return (
+                    <Tag color={isExpired ? 'red' : 'green'}>
+                        {isExpired ? 'Expired' : 'Valid'}
+                    </Tag>
+                );
+            },
         },
         {
-            title: 'Actions',
-            key: 'actions',
-            width: 150,
-            render: (_: any, record: Certificate) => (
-                <Button
-                    type="primary"
-                    icon={<DownloadOutlined />}
-                    loading={downloading === record.id}
-                    onClick={() => handleDownload(record)}
-                >
-                    Download
-                </Button>
-            ),
+            title: 'Action',
+            key: 'action',
+            render: (record: Certificate) => {
+                const now = new Date();
+                const expiresAt = record.expiresAt ? new Date(record.expiresAt) : null;
+                const isExpired = expiresAt && expiresAt < now;
+
+                return (
+                    <DownloadButton
+                        certificateId={record.id}
+                        fileName={record.fileName}
+                        disabled={isExpired}
+                        size="small"
+                    />
+                );
+            },
         },
     ];
 
     return (
-        <div style={{ padding: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-                <Title level={2} style={{ margin: 0 }}>
-                    Certificates
-                </Title>
-                <Button icon={<ReloadOutlined />} onClick={loadCertificates} loading={loading}>
-                    Refresh
-                </Button>
-            </div>
-
-            {certificates.length === 0 && !loading ? (
-                <Card>
-                    <Empty
-                        description="No certificates yet"
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    />
-                </Card>
-            ) : (
-                <Table
-                    dataSource={certificates}
-                    columns={columns}
-                    rowKey="id"
-                    loading={loading}
-                    pagination={{ pageSize: 10 }}
-                />
-            )}
-        </div>
+        <Table<Certificate>
+            {...tableProps}
+            columns={columns}
+            rowKey="id"
+            expandable={{
+                expandedRowRender: (record) => (
+                    <Descriptions bordered size="small" column={2}>
+                        <Descriptions.Item label="Certificate ID">
+                            <Text copyable>{record.id}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Analysis ID">
+                            <Text copyable>{record.analysisId}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="User ID">
+                            <Text copyable>{record.userId}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Generated At">
+                            {new Date(record.generatedAt).toLocaleString()}
+                        </Descriptions.Item>
+                        {record.expiresAt && (
+                            <Descriptions.Item label="Expires At">
+                                {new Date(record.expiresAt).toLocaleString()}
+                            </Descriptions.Item>
+                        )}
+                        {record.downloadCount !== undefined && (
+                            <Descriptions.Item label="Download Count">
+                                {record.downloadCount}
+                            </Descriptions.Item>
+                        )}
+                    </Descriptions>
+                ),
+            }}
+        />
     );
 };

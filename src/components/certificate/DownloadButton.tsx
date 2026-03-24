@@ -1,59 +1,74 @@
 import React, { useState } from 'react';
-import { Button, notification } from 'antd';
-import { DownloadOutlined } from '@ant-design/icons';
+import { Button, Tooltip, Progress, message } from 'antd';
+import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { certificateService } from '../../services/CertificateService';
 
 interface DownloadButtonProps {
     certificateId: string;
-    fileName?: string;
-    label?: string;
+    fileName: string;
+    disabled?: boolean;
+    size?: 'small' | 'middle' | 'large';
+    type?: 'primary' | 'default' | 'link' | 'text';
 }
 
+/**
+ * Certificate download button with loading state and retry mechanism
+ */
 export const DownloadButton: React.FC<DownloadButtonProps> = ({
     certificateId,
     fileName,
-    label,
+    disabled = false,
+    size = 'middle',
+    type = 'primary',
 }) => {
     const [loading, setLoading] = useState(false);
-    const [retryCount, setRetryCount] = useState(0);
+    const [error, setError] = useState<string | null>(null);
 
     const handleDownload = async () => {
         setLoading(true);
+        setError(null);
+
         try {
             await certificateService.downloadCertificate(certificateId, fileName);
-            setRetryCount(0);
-            notification.success({
-                title: 'Download Started',
-                message: 'Your certificate is being downloaded.',
-            });
-        } catch (error) {
-            if (retryCount < 3) {
-                notification.warning({
-                    title: 'Download Failed',
-                    message: 'Retrying...',
-                });
-                setRetryCount((prev) => prev + 1);
-                setTimeout(handleDownload, 1000 * (retryCount + 1)); // Exponential backoff
-            } else {
-                notification.error({
-                    title: 'Download Failed',
-                    message: 'Please try again later.',
-                });
-                setRetryCount(0);
-            }
+            message.success('Certificate downloaded successfully');
+        } catch (err: any) {
+            const errorMessage = err?.message || 'Failed to download certificate';
+            setError(errorMessage);
+            message.error(errorMessage);
         } finally {
             setLoading(false);
         }
     };
 
+    if (error) {
+        return (
+            <Tooltip title="Click to retry download">
+                <Button
+                    type="default"
+                    size={size}
+                    icon={<ReloadOutlined />}
+                    onClick={handleDownload}
+                    loading={loading}
+                    danger
+                >
+                    Retry Download
+                </Button>
+            </Tooltip>
+        );
+    }
+
     return (
-        <Button
-            type="primary"
-            icon={<DownloadOutlined />}
-            loading={loading}
-            onClick={handleDownload}
-        >
-            {label || 'Download Certificate'}
-        </Button>
+        <Tooltip title={disabled ? 'Download not available' : 'Download certificate'}>
+            <Button
+                type={type}
+                size={size}
+                icon={<DownloadOutlined />}
+                onClick={handleDownload}
+                loading={loading}
+                disabled={disabled}
+            >
+                {loading ? 'Downloading...' : 'Download'}
+            </Button>
+        </Tooltip>
     );
 };

@@ -1,10 +1,15 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './App.tsx'
-import './index.css'
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "@refinedev/antd/dist/reset.css";
+import "./styles/accessibility.css";
+import { register as registerServiceWorker } from "./utils/serviceWorkerRegistration";
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
     <App />
-  </StrictMode>
-)
+  </React.StrictMode>
+);
+
+// Register service worker for asset caching in production
+registerServiceWorker();

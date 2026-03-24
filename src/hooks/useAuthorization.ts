@@ -1,47 +1,57 @@
-import { useAuth } from '../context/AuthContext';
-import { subscriptionService } from '../services/SubscriptionService';
+import { useGetIdentity } from '@refinedev/core';
 
+/**
+ * Authorization hook for checking user permissions and resource access
+ */
 export const useAuthorization = () => {
-    const { user, isAuthenticated } = useAuth();
+  const { data: user } = useGetIdentity<{
+    id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+  }>();
 
-    /**
-     * Check if current user owns a resource
-     */
-    const canAccessResource = (resourceUserId: string): boolean => {
-        return isAuthenticated && user?.id === resourceUserId;
-    };
+  /**
+   * Checks if the current user can access a resource
+   * Verifies that the resource belongs to the authenticated user
+   */
+  const canAccessResource = (resourceUserId: string): boolean => {
+    if (!user?.id) {
+      return false;
+    }
+    return user.id === resourceUserId;
+  };
 
-    /**
-     * Check if user has an active subscription
-     */
-    const hasActiveSubscription = async (): Promise<boolean> => {
-        if (!isAuthenticated) return false;
-        try {
-            const subscription = await subscriptionService.getCurrentSubscription();
-            return subscription?.status === 'active';
-        } catch {
-            return false;
-        }
-    };
+  /**
+   * Checks if the current user has an active subscription
+   * This should be implemented based on your subscription logic
+   */
+  const hasSubscription = async (): Promise<boolean> => {
+    // TODO: Implement actual subscription check
+    // This would typically call your subscription service or API
+    // For now, return true if user is authenticated
+    return !!user?.id;
+  };
 
-    /**
-     * Check if user can perform analysis (has subscription with remaining analyses)
-     */
-    const canPerformAnalysis = async (): Promise<boolean> => {
-        if (!isAuthenticated) return false;
-        try {
-            const subscription = await subscriptionService.getCurrentSubscription();
-            return subscription?.status === 'active';
-        } catch {
-            return false;
-        }
-    };
+  /**
+   * Checks if user is authenticated
+   */
+  const isAuthenticated = (): boolean => {
+    return !!user?.id;
+  };
 
-    return {
-        canAccessResource,
-        hasActiveSubscription,
-        canPerformAnalysis,
-        isAuthenticated,
-        userId: user?.id,
-    };
+  /**
+   * Gets the current user ID
+   */
+  const getUserId = (): string | undefined => {
+    return user?.id;
+  };
+
+  return {
+    canAccessResource,
+    hasSubscription,
+    isAuthenticated,
+    getUserId,
+    user,
+  };
 };

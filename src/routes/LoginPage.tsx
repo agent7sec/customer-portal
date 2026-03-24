@@ -1,38 +1,46 @@
-import { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Spin, Typography } from 'antd';
-import { useAuth } from '../hooks/useAuth';
+import React from "react";
+import { Button, Card, Typography, Space } from "antd";
+import { LoginOutlined } from "@ant-design/icons";
+import { useLogin } from "@refinedev/core";
 
-const { Text } = Typography;
+const { Title, Paragraph } = Typography;
 
-/**
- * LoginPage redirects to Auth0 Universal Login.
- * If the user was trying to access a protected page, the return path is preserved.
- */
-export const LoginPage = () => {
-  const location = useLocation();
-  const { signIn, isAuthenticated, isLoading } = useAuth();
+export const LoginPage: React.FC = () => {
+  const { mutate: login, isLoading } = useLogin();
 
-  const from = (location.state as any)?.from?.pathname || '/dashboard';
-
-  useEffect(() => {
-    // Only redirect to Auth0 if not already authenticated and not loading
-    if (!isAuthenticated && !isLoading) {
-      signIn(from);
-    }
-  }, [isAuthenticated, isLoading, signIn, from]);
+  const handleLogin = () => {
+    login({});
+  };
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'center',
-      minHeight: '100vh',
-      gap: '16px',
-    }}>
-      <Spin size="large" />
-      <Text type="secondary">Redirecting to sign in...</Text>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        minHeight: "100vh",
+        background: "#f0f2f5",
+      }}
+    >
+      <Card style={{ width: 400, textAlign: "center" }}>
+        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          <Title level={2}>Customer Portal</Title>
+          <Paragraph>
+            Sign in to access your code analysis dashboard, manage subscriptions, and download
+            certificates.
+          </Paragraph>
+          <Button
+            type="primary"
+            size="large"
+            icon={<LoginOutlined />}
+            onClick={handleLogin}
+            loading={isLoading}
+            block
+          >
+            Sign In with Auth0
+          </Button>
+        </Space>
+      </Card>
     </div>
   );
 };
