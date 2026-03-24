@@ -52,6 +52,16 @@ export const authProvider: AuthProvider = {
 
   check: async () => {
     try {
+      // Handle the redirect callback if returning from Auth0
+      if (
+        window.location.search.includes("code=") &&
+        window.location.search.includes("state=")
+      ) {
+        await auth0Client.handleRedirectCallback();
+        // Clean up the URL parameters
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
       const isAuthenticated = await auth0Client.isAuthenticated();
       if (isAuthenticated) {
         return { authenticated: true };

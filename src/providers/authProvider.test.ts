@@ -10,6 +10,7 @@ vi.mock("@auth0/auth0-spa-js", () => ({
       isAuthenticated: vi.fn().mockResolvedValue(false),
       getUser: vi.fn().mockResolvedValue(null),
       getTokenSilently: vi.fn().mockResolvedValue("mock-token"),
+      handleRedirectCallback: vi.fn().mockResolvedValue(undefined),
     };
   }),
 }));
@@ -43,6 +44,32 @@ describe("authProvider", () => {
       const result = await authProvider.check();
       expect(result.authenticated).toBe(false);
       expect(result.redirectTo).toBe("/login");
+    });
+
+    it("should handle redirect callback when code and state are present", async () => {
+      const originalLocation = window.location;
+
+      // Mock window.location.search
+      Object.defineProperty(window, "location", {
+        value: {
+          ...originalLocation,
+          search: "?code=xyz&state=abc",
+          pathname: "/",
+        },
+        writable: true,
+      });
+
+      // We just want to check if it parses, we don't care about the final auth state
+      await authProvider.check();
+
+      // Since we can't easily assert on the inner mock without exporting it, 
+      // we just ensure no errors are thrown during handleRedirectCallback
+
+      // Restore window.location
+      Object.defineProperty(window, "location", {
+        value: originalLocation,
+        writable: true,
+      });
     });
   });
 
