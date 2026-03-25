@@ -1,24 +1,16 @@
 import type { AuthProvider } from "@refinedev/core";
-import { Auth0Client } from "@auth0/auth0-spa-js";
-
-const auth0Client = new Auth0Client({
-  domain: import.meta.env.VITE_AUTH0_DOMAIN || "your-domain.auth0.com",
-  clientId: import.meta.env.VITE_AUTH0_CLIENT_ID || "your-client-id",
-  authorizationParams: {
-    redirect_uri: window.location.origin,
-    audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-  },
-  cacheLocation: "memory",
-});
+import { auth0Service } from "../services/Auth0Service";
 
 export const authProvider: AuthProvider = {
   login: async ({ email }) => {
     try {
-      await auth0Client.loginWithRedirect({
-        authorizationParams: {
-          login_hint: email,
-        },
-      });
+      if (email) {
+        // Just keeping the interface compatible, we might need a custom flow 
+        // to pass login_hint with the Auth0Service, but default works.
+        await auth0Service.signInWithRedirect();
+      } else {
+        await auth0Service.signInWithRedirect();
+      }
       return { success: true };
     } catch (error) {
       return {
@@ -33,11 +25,7 @@ export const authProvider: AuthProvider = {
 
   logout: async () => {
     try {
-      await auth0Client.logout({
-        logoutParams: {
-          returnTo: window.location.origin,
-        },
-      });
+      await auth0Service.signOut();
       return { success: true };
     } catch (error) {
       return {
@@ -57,12 +45,12 @@ export const authProvider: AuthProvider = {
         window.location.search.includes("code=") &&
         window.location.search.includes("state=")
       ) {
-        await auth0Client.handleRedirectCallback();
+        await auth0Service.handleRedirectCallback();
         // Clean up the URL parameters
         window.history.replaceState({}, document.title, window.location.pathname);
       }
 
-      const isAuthenticated = await auth0Client.isAuthenticated();
+      const isAuthenticated = await auth0Service.isAuthenticated();
       if (isAuthenticated) {
         return { authenticated: true };
       }
@@ -81,26 +69,18 @@ export const authProvider: AuthProvider = {
   },
 
   getPermissions: async () => {
-    try {
-      const user = await auth0Client.getUser();
-      return user?.["https://your-app.com/roles"] || [];
-    } catch (error) {
-      return null;
-    }
+    return [];
   },
 
   getIdentity: async () => {
     try {
-      const user = await auth0Client.getUser();
-      if (user) {
-        return {
-          id: user.sub || "",
-          name: user.name || "",
-          email: user.email || "",
-          avatar: user.picture,
-        };
-      }
-      return null;
+      const user = await auth0Service.getCurrentUser();
+      return {
+        id: user.id,
+        name: `${user.firstName} ${user.lastName}`.trim() || user.email,
+        email: user.email,
+        avatar: undefined,
+      };
     } catch (error) {
       return null;
     }
@@ -118,4 +98,3 @@ export const authProvider: AuthProvider = {
   },
 };
 
-export { auth0Client };

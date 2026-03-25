@@ -36,13 +36,13 @@ const createApiClient = (): AxiosInstance => {
         (response) => response,
         async (error: AxiosError) => {
             if (error.response?.status === 401) {
-                // Session expired, redirect to login
+                // Session expired, redirect to login via Auth0
                 try {
                     await auth0Service.signOut();
                 } catch {
-                    // Ignore signout errors
+                    // If signout fails, manually redirect
+                    window.location.href = '/login';
                 }
-                window.location.href = '/login';
             }
             return Promise.reject(error);
         }
