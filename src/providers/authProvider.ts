@@ -40,16 +40,8 @@ export const authProvider: AuthProvider = {
 
   check: async () => {
     try {
-      // Handle the redirect callback if returning from Auth0
-      if (
-        window.location.search.includes("code=") &&
-        window.location.search.includes("state=")
-      ) {
-        await auth0Service.handleRedirectCallback();
-        // Clean up the URL parameters
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-
+      // Callback handling is owned by the /callback route (CallbackPage).
+      // Here we only check whether a valid session already exists.
       const isAuthenticated = await auth0Service.isAuthenticated();
       if (isAuthenticated) {
         return { authenticated: true };
@@ -69,8 +61,23 @@ export const authProvider: AuthProvider = {
   },
 
   getPermissions: async () => {
-    return [];
+    try {
+      const user = await auth0Service.getCurrentUser();
+      if (!user) return [];
+      // Roles are injected by Auth0 Actions under the https://a7s.app/ namespace
+      // e.g. ["customer", "subscriber"] or ["customer"]
+      const client = (auth0Service as any)['auth0Client'];
+      if (client) {
+        const claims = await client.getIdTokenClaims?.();
+        const roles: string[] = claims?.['https://a7s.app/roles'] || [];
+        return roles;
+      }
+      return [];
+    } catch {
+      return [];
+    }
   },
+
 
   getIdentity: async () => {
     try {
@@ -79,11 +86,14 @@ export const authProvider: AuthProvider = {
         id: user.id,
         name: `${user.firstName} ${user.lastName}`.trim() || user.email,
         email: user.email,
-        avatar: undefined,
+        avatar: user.picture,
+        tenantId: user.tenantId,
+        organizationName: user.organizationName,
       };
     } catch (error) {
       return null;
     }
+
   },
 
   onError: async (error) => {

@@ -102,17 +102,38 @@ class Auth0Service {
         throw new Error('User is not authenticated');
       }
 
+      // app_metadata is injected via Auth0 action/rule into the token claims
+      // Namespace: https://a7s.app/
+      const appMeta = (user['https://a7s.app/app_metadata'] as Record<string, string> | undefined) || {};
+
       return {
         id: user.sub || '',
         email: user.email || '',
         emailVerified: user.email_verified || false,
-        firstName: user.given_name || user.user_metadata?.given_name || '',
-        lastName: user.family_name || user.user_metadata?.family_name || '',
-        createdAt: new Date(user.created_at || Date.now()),
-        updatedAt: new Date(user.updated_at || Date.now()),
+        firstName: user.given_name || user['user_metadata']?.given_name || '',
+        lastName: user.family_name || user['user_metadata']?.family_name || '',
+        picture: user.picture,
+        tenantId: appMeta.tenantId,
+        organizationName: appMeta.organizationName,
+        createdAt: new Date(user['created_at'] || Date.now()),
+        updatedAt: new Date(user['updated_at'] || Date.now()),
       };
     } catch (error: any) {
       throw new Error('User is not authenticated');
+    }
+  }
+
+  /**
+   * Get a fresh access token, refreshing silently if needed.
+   * Use this instead of getTokens() when you need a guaranteed valid token.
+   */
+  async getAccessToken(): Promise<string> {
+    try {
+      const client = await this.getClient();
+      const token = await client.getTokenSilently();
+      return token;
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to get access token');
     }
   }
 

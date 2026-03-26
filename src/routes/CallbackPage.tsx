@@ -1,17 +1,17 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Spin, Typography } from 'antd';
-import { useAuth } from '../context/AuthContext';
+import { auth0Service } from '../services/Auth0Service';
 
 const { Text } = Typography;
 
 /**
  * CallbackPage handles the Auth0 redirect after login/signup.
- * It processes the authorization code and redirects to the intended page.
+ * It processes the authorization code using the same auth0Service singleton
+ * that the Refine authProvider uses, then redirects to the intended page.
  */
 export const CallbackPage = () => {
     const navigate = useNavigate();
-    const { handleRedirectCallback } = useAuth();
     const processedRef = useRef(false);
 
     useEffect(() => {
@@ -21,7 +21,7 @@ export const CallbackPage = () => {
 
         const processCallback = async () => {
             try {
-                const rawReturnTo = await handleRedirectCallback();
+                const { returnTo: rawReturnTo } = await auth0Service.handleRedirectCallback();
                 // Guard against open-redirect: only allow same-origin relative paths
                 const safeReturnTo =
                     typeof rawReturnTo === 'string' &&
@@ -37,7 +37,7 @@ export const CallbackPage = () => {
         };
 
         processCallback();
-    }, [handleRedirectCallback, navigate]);
+    }, [navigate]);
 
     return (
         <div style={{

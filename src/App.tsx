@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from "react";
+import { Suspense, lazy } from "react";
 import { Refine, Authenticated } from "@refinedev/core";
 import { RefineKbar, RefineKbarProvider } from "@refinedev/kbar";
 import routerBindings, {
@@ -34,6 +34,9 @@ const SubscriptionPage = lazy(() =>
 );
 const AccountSettingsPage = lazy(() =>
   import("./routes/AccountSettingsPage").then((m) => ({ default: m.AccountSettingsPage }))
+);
+const CallbackPage = lazy(() =>
+  import("./routes/CallbackPage").then((m) => ({ default: m.CallbackPage }))
 );
 
 const LoadingFallback = () => (
@@ -140,6 +143,16 @@ function App() {
                   >
                     <Route path="/login" element={<LoginPage />} />
                   </Route>
+
+                  {/* Public: Auth0 redirect_uri — must be outside the Authenticated guard */}
+                  <Route
+                    path="/callback"
+                    element={
+                      <Suspense fallback={<LoadingFallback />}>
+                        <CallbackPage />
+                      </Suspense>
+                    }
+                  />
 
                   <Route path="*" element={<CatchAllNavigate to="/" />} />
                 </Routes>

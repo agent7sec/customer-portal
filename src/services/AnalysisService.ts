@@ -1,5 +1,7 @@
 import { apiClient } from '../providers/apiProvider';
 import type { Analysis } from '../types/analysis.types';
+import { normalizeStatus } from '../types/analysis.types';
+
 
 /**
  * Service for managing analysis operations
@@ -49,11 +51,14 @@ export class AnalysisService {
    */
   private mapAnalysis(data: any): Analysis {
     return {
-      id: data.id,
+      id: data.id || data.analysisId || data.analysis_id,
       userId: data.user_id || data.userId,
       fileName: data.file_name || data.fileName,
       fileSize: data.file_size || data.fileSize,
-      status: data.status,
+      fileHash: data.file_hash || data.fileHash,
+      // normalizeStatus converts backend UPPERCASE to frontend lowercase
+      // e.g. "VERIFYING" → "verifying", "PENDING_APPROVAL" → "pending_approval"
+      status: normalizeStatus(data.status || 'pending'),
       progress: data.progress || 0,
       currentStage: data.current_stage || data.currentStage,
       submittedAt: data.submitted_at || data.submittedAt || new Date().toISOString(),

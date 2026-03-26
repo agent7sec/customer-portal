@@ -1,32 +1,174 @@
 import React, { useState } from 'react';
-import { Upload, Progress, Alert, List, Button, Typography, Space, Card, theme, notification } from 'antd';
-import { InboxOutlined, DeleteOutlined, FileOutlined, CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+    Upload, Progress, Alert, List, Button, Typography,
+    Space, Card, Tag, Descriptions, Tooltip, theme, notification,
+} from 'antd';
+import {
+    InboxOutlined, DeleteOutlined, FileOutlined,
+    CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined,
+    LoadingOutlined, CopyOutlined,
+} from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import { uploadService } from '../../services/UploadService';
-import type { UploadFile } from '../../types/upload.types';
+import type { UploadFile, AnalysisRecord } from '../../types/upload.types';
 import { formatFileSize, ALLOWED_FILE_TYPES, MAX_FILE_SIZE } from '../../types/upload.types';
+import { calculateFileHash, truncateHash } from '../../utils/fileHash';
 
 const { Dragger } = Upload;
-const { Text, Title } = Typography;
+const { Text, Title, Paragraph } = Typography;
 const { useToken } = theme;
 
 interface FileUploaderProps {
-    onUploadComplete?: (analysisId: string) => void;
+    onUploadComplete?: (analysis: AnalysisRecord) => void;
     onUploadError?: (error: string) => void;
+    /** Auth0 tenantId from user context – required for DynamoDB tenant isolation */
+    tenantId?: string;
+    userId?: string;
 }
 
 interface UploadFileWithNative extends UploadFile {
     nativeFile?: File;
 }
 
-export const FileUploader: React.FC<FileUploaderProps> = ({ onUploadComplete, onUploadError }) => {
+// ── File Details card shown after a successful upload ────────────────────────
+
+const FileDetailsCard: React.FC<{ analysis: AnalysisRecord }> = ({ analysis }) => (
+    <Card
+        title={
+            <Space>
+                <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                <span>File Details</span>
+                <Tag color="green">UPLOADED</Tag>
+            </Space>
+        }
+    >
+        <Descriptions column={1} bordered size="small">
+            <Descriptions.Item label="File Name">
+                <Text strong>{analysis.fileName}</Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="File Size">
+                {formatFileSize(analysis.fileSize)}
+            </Descriptions.Item>
+            <Descriptions.Item label="SHA-256 Hash">
+                <Tooltip title="This hash uniquely identifies your file across all systems">
+                    <Paragraph
+                        copyable={{ icon: <CopyOutlined />, tooltips: ['Copy hash', 'Copied!'] }}
+                        style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px' }}
+                    >
+                        {analysis.fileHash}
+                    </Paragraph>
+                </Tooltip>
+            </Descriptions.Item>
+            <Descriptions.Item label="Analysis ID">
+                <Text code>{analysis.analysisId}</Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="Status">
+                <Tag color="blue">{analysis.status}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="Uploaded At">
+                {new Date(analysis.createdAt).toLocaleString()}
+            </Descriptions.Item>
+        </Descriptions>
+    </Card>
+);
+
+// ── Main FileUploader ────────────────────────────────────────────────────────
+
+export const FileUploader: React.FC<FileUploaderProps> = ({
+    onUploadComplete,
+    onUploadError,
+    tenantId,
+    userId,
+}) => {
     const { token } = useToken();
     const [uploadFiles, setUploadFiles] = useState<UploadFileWithNative[]>([]);
     const [uploading, setUploading] = useState(false);
+    const [completedAnalysis, setCompletedAnalysis] = useState<AnalysisRecord | null>(null);
+
+    const updateFileStatus = (fileId: string, updates: Partial<UploadFileWithNative>) => {
+        setUploadFiles(prev =>
+            prev.map(file => file.id === fileId ? { ...file, ...updates } : file)
+        );
+    };
+
+    const handleUpload = async (file: File, fileId: string) => {
+        setUploading(true);
+
+        try {
+            // Step 1 — Calculate SHA-256 hash (Phase 5 spec requirement)
+            updateFileStatus(fileId, { status: 'hashing', progress: 0 });
+            const hash = await calculateFileHash(file);
+            updateFileStatus(fileId, { hash, status: 'uploading', progress: 0 });
+
+            // Step 2 — Get pre-signed S3 URL
+            const presignedData = await uploadService.getPresignedUrl(
+                file.name,
+                file.type || 'application/octet-stream'
+            );
+            updateFileStatus(fileId, { fileKey: presignedData.fileKey });
+
+            // Step 3 — Upload directly to S3 with progress tracking
+            await uploadService.uploadToS3(
+                presignedData.uploadUrl,
+                file,
+                (percent) => updateFileStatus(fileId, { progress: percent })
+            );
+
+            // Step 4 — Create DynamoDB analysis record via POST /analyses
+            updateFileStatus(fileId, { status: 'saving', progress: 100 });
+
+            const effectiveTenantId = tenantId || 'default';
+            const record = await uploadService.createAnalysisRecord({
+                fileName: file.name,
+                fileSize: file.size,
+                fileHash: hash,
+                fileKey: presignedData.fileKey,
+                tenantId: effectiveTenantId,
+            });
+
+            // Build the full analysis record for display and callback
+            const analysis: AnalysisRecord = {
+                analysisId: record.analysisId,
+                tenantId: effectiveTenantId,
+                userId: userId || '',
+                fileHash: hash,
+                fileName: record.fileName,
+                fileSize: record.fileSize,
+                fileKey: presignedData.fileKey,
+                status: 'UPLOADED',
+                createdAt: record.createdAt,
+                updatedAt: record.createdAt,
+            };
+
+            updateFileStatus(fileId, { status: 'completed', progress: 100, analysisId: record.analysisId });
+            setCompletedAnalysis(analysis);
+
+            notification.success({
+                message: 'Upload Successful',
+                description: `${file.name} uploaded — analysis ${record.analysisId} created.`,
+                placement: 'topRight',
+            });
+
+            onUploadComplete?.(analysis);
+
+        } catch (error: any) {
+            const errorMessage = error.response?.data?.message || error.message || 'Upload failed';
+            updateFileStatus(fileId, { status: 'failed', error: errorMessage });
+            notification.error({
+                message: 'Upload Failed',
+                description: errorMessage,
+                placement: 'topRight',
+                duration: 0,
+            });
+            onUploadError?.(errorMessage);
+        } finally {
+            setUploading(false);
+        }
+    };
 
     const beforeUpload: UploadProps['beforeUpload'] = (file) => {
         const validation = uploadService.validateFile(file);
-        
+
         if (!validation.valid) {
             notification.error({
                 message: 'File Validation Failed',
@@ -49,116 +191,42 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onUploadComplete, on
 
         setUploadFiles(prev => [...prev, uploadFile]);
         handleUpload(file, uploadFile.id);
-        
-        return false; // Prevent default upload behavior
-    };
-
-    const handleUpload = async (file: File, fileId: string) => {
-        setUploading(true);
-        
-        try {
-            // Update status to uploading
-            updateFileStatus(fileId, { status: 'uploading', progress: 0 });
-
-            // Get pre-signed URL
-            const presignedData = await uploadService.getPresignedUrl(
-                file.name,
-                file.type || 'application/octet-stream'
-            );
-
-            // Store analysis ID and file key
-            updateFileStatus(fileId, { 
-                analysisId: presignedData.analysisId,
-                fileKey: presignedData.fileKey 
-            });
-
-            // Upload to S3 with progress tracking and automatic retry
-            await uploadService.uploadToS3(
-                presignedData.uploadUrl,
-                file,
-                (percent) => {
-                    updateFileStatus(fileId, { progress: percent });
-                }
-            );
-
-            // Notify backend of completion
-            await uploadService.notifyUploadComplete(
-                presignedData.analysisId,
-                presignedData.fileKey
-            );
-
-            // Update status to completed
-            updateFileStatus(fileId, { status: 'completed', progress: 100 });
-            
-            notification.success({
-                message: 'Upload Successful',
-                description: `${file.name} has been uploaded successfully`,
-                placement: 'topRight',
-            });
-            
-            onUploadComplete?.(presignedData.analysisId);
-
-        } catch (error: any) {
-            const errorMessage = error.response?.data?.message || error.message || 'Upload failed';
-            updateFileStatus(fileId, { 
-                status: 'failed', 
-                error: errorMessage 
-            });
-            
-            notification.error({
-                message: 'Upload Failed',
-                description: errorMessage,
-                placement: 'topRight',
-                duration: 0, // Don't auto-close error notifications
-            });
-            
-            onUploadError?.(errorMessage);
-        } finally {
-            setUploading(false);
-        }
+        return false;
     };
 
     const handleRetry = (fileId: string) => {
         const file = uploadFiles.find(f => f.id === fileId);
         if (file?.nativeFile) {
-            updateFileStatus(fileId, { status: 'pending', error: undefined, progress: 0 });
+            updateFileStatus(fileId, { status: 'pending', error: undefined, progress: 0, hash: undefined });
             handleUpload(file.nativeFile, fileId);
         }
     };
 
-    const updateFileStatus = (fileId: string, updates: Partial<UploadFileWithNative>) => {
-        setUploadFiles(prev =>
-            prev.map(file =>
-                file.id === fileId ? { ...file, ...updates } : file
-            )
-        );
-    };
-
     const handleRemove = async (fileId: string) => {
         const file = uploadFiles.find(f => f.id === fileId);
-        
         if (file?.fileKey && file.status !== 'completed') {
-            try {
-                await uploadService.cancelUpload(file.fileKey);
-            } catch (error) {
-                console.error('Failed to cancel upload:', error);
-            }
+            try { await uploadService.cancelUpload(file.fileKey); } catch { /* ignore */ }
         }
-
         setUploadFiles(prev => prev.filter(f => f.id !== fileId));
     };
 
-    const getStatusIcon = (status: UploadFile['status']) => {
+    const getStatusLabel = (status: UploadFile['status']) => {
         switch (status) {
-            case 'completed':
-                return <CheckCircleOutlined style={{ color: token.colorSuccess }} />;
-            case 'failed':
-                return <CloseCircleOutlined style={{ color: token.colorError }} />;
-            case 'uploading':
-                return <FileOutlined style={{ color: token.colorPrimary }} />;
-            default:
-                return <FileOutlined />;
+            case 'hashing': return 'Calculating SHA-256 hash…';
+            case 'uploading': return 'Uploading to S3…';
+            case 'saving': return 'Creating analysis record…';
+            case 'completed': return 'Upload complete';
+            case 'failed': return 'Upload failed';
+            default: return 'Pending';
         }
+    };
+
+    const getStatusIcon = (status: UploadFile['status']) => {
+        if (status === 'completed') return <CheckCircleOutlined style={{ color: token.colorSuccess }} />;
+        if (status === 'failed') return <CloseCircleOutlined style={{ color: token.colorError }} />;
+        if (['hashing', 'uploading', 'saving'].includes(status))
+            return <LoadingOutlined style={{ color: token.colorPrimary }} />;
+        return <FileOutlined />;
     };
 
     const uploadProps: UploadProps = {
@@ -166,7 +234,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onUploadComplete, on
         multiple: false,
         beforeUpload,
         showUploadList: false,
-        disabled: uploading,
+        disabled: uploading || completedAnalysis !== null,
     };
 
     return (
@@ -176,7 +244,8 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onUploadComplete, on
                     <div>
                         <Title level={4}>Upload Code for Analysis</Title>
                         <Text type="secondary">
-                            Upload your code archive for security analysis and certification
+                            Upload your code archive for security analysis and certification.
+                            A SHA-256 hash will be calculated to uniquely identify your file.
                         </Text>
                     </div>
 
@@ -197,11 +266,9 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onUploadComplete, on
                         <p className="ant-upload-drag-icon">
                             <InboxOutlined style={{ color: token.colorPrimary }} />
                         </p>
-                        <p className="ant-upload-text">
-                            Click or drag file to this area to upload
-                        </p>
+                        <p className="ant-upload-text">Click or drag file to upload</p>
                         <p className="ant-upload-hint">
-                            Support for single file upload. Strictly prohibited from uploading company data or other banned files.
+                            Single file upload. A SHA-256 hash is computed locally before transfer.
                         </p>
                     </Dragger>
                 </Space>
@@ -224,7 +291,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onUploadComplete, on
                                             Retry
                                         </Button>
                                     ),
-                                    file.status !== 'uploading' && (
+                                    file.status !== 'uploading' && file.status !== 'hashing' && file.status !== 'saving' && (
                                         <Button
                                             type="text"
                                             danger
@@ -246,15 +313,15 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onUploadComplete, on
                                     }
                                     description={
                                         <Space direction="vertical" style={{ width: '100%' }}>
+                                            <Text type="secondary">{getStatusLabel(file.status)}</Text>
+
                                             {file.status === 'uploading' && (
-                                                <Progress 
-                                                    percent={file.progress} 
-                                                    status="active"
-                                                    size="small"
-                                                />
+                                                <Progress percent={file.progress} status="active" size="small" />
                                             )}
-                                            {file.status === 'completed' && (
-                                                <Text type="success">Upload completed successfully</Text>
+                                            {file.hash && (
+                                                <Text type="secondary" style={{ fontSize: '11px', fontFamily: 'monospace' }}>
+                                                    SHA-256: {truncateHash(file.hash)}
+                                                </Text>
                                             )}
                                             {file.status === 'failed' && (
                                                 <Alert
@@ -264,9 +331,6 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onUploadComplete, on
                                                     style={{ marginTop: 8 }}
                                                 />
                                             )}
-                                            {file.status === 'pending' && (
-                                                <Text type="secondary">Waiting to upload...</Text>
-                                            )}
                                         </Space>
                                     }
                                 />
@@ -275,6 +339,8 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onUploadComplete, on
                     />
                 </Card>
             )}
+
+            {completedAnalysis && <FileDetailsCard analysis={completedAnalysis} />}
         </Space>
     );
 };
