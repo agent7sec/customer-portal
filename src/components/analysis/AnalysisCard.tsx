@@ -22,14 +22,19 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({ analysis }) => {
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   };
 
-  const formatDate = (date: Date): string => {
-    return new Date(date).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  const formatDate = (date: Date | string | undefined): string => {
+    if (!date) return 'N/A';
+    try {
+      return new Date(date).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return 'N/A';
+    }
   };
 
   return (
@@ -75,7 +80,7 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({ analysis }) => {
 
         <div>
           <Text type="secondary">Submitted: </Text>
-          <Text>{formatDate(analysis.submittedAt)}</Text>
+          <Text>{formatDate(analysis.createdAt || analysis.submittedAt || analysis.uploadedAt)}</Text>
         </div>
 
         {analysis.status === 'processing' && (

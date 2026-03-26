@@ -58,6 +58,7 @@ export interface Analysis {
   currentStage?: string;
   submittedAt?: string;
   uploadedAt: string;
+  createdAt?: string;
   completedAt?: string;
   certificateUrl?: string;
   errorMessage?: string;

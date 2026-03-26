@@ -65,29 +65,35 @@ export const AnalysisDetails: React.FC = () => {
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   };
 
-  const formatDate = (date: Date): string => {
-    return new Date(date).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  const formatDate = (date: Date | string | undefined): string => {
+    if (!date) return 'N/A';
+    try {
+      return new Date(date).toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return 'N/A';
+    }
   };
 
   const getStageStatus = (index: number): 'finish' | 'process' | 'wait' | 'error' => {
     if (!analysis) return 'wait';
 
     if (analysis.status === 'failed') {
-      const currentStageIndex = Math.floor(analysis.progress / 20);
+      const currentStageIndex = Math.floor((analysis.progress || 0) / 20);
       if (index < currentStageIndex) return 'finish';
       if (index === currentStageIndex) return 'error';
       return 'wait';
     }
 
     const stageProgress = (index + 1) * 20;
-    if (analysis.progress >= stageProgress) return 'finish';
-    if (analysis.progress >= stageProgress - 20) return 'process';
+    const currentProgress = analysis.progress || 0;
+    if (currentProgress >= stageProgress) return 'finish';
+    if (currentProgress >= stageProgress - 20) return 'process';
     return 'wait';
   };
 
@@ -170,7 +176,7 @@ export const AnalysisDetails: React.FC = () => {
                 {formatFileSize(analysis.fileSize)}
               </Descriptions.Item>
               <Descriptions.Item label="Submitted">
-                {formatDate(analysis.submittedAt)}
+                {formatDate(analysis.createdAt || analysis.submittedAt || analysis.uploadedAt)}
               </Descriptions.Item>
               {analysis.completedAt && (
                 <Descriptions.Item label="Completed" span={2}>
