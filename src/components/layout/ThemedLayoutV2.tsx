@@ -27,6 +27,13 @@ const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
+interface IUser {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+}
+
 interface ThemedLayoutV2Props {
   children: React.ReactNode;
 }
@@ -35,7 +42,7 @@ export const ThemedLayoutV2: React.FC<ThemedLayoutV2Props> = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const { mutate: logout } = useLogout();
-  const { data: identity } = useGetIdentity();
+  const { data: identity } = useGetIdentity<IUser>();
   const { menuItems, selectedKey } = useMenu();
   const { push } = useNavigation();
   const location = useLocation();
@@ -90,8 +97,8 @@ export const ThemedLayoutV2: React.FC<ThemedLayoutV2Props> = ({ children }) => {
     ];
 
     return (
-      <Breadcrumb 
-        items={breadcrumbItems} 
+      <Breadcrumb
+        items={breadcrumbItems}
         style={{ margin: "16px 0" }}
         aria-label="Breadcrumb navigation"
       />
@@ -215,33 +222,25 @@ export const ThemedLayoutV2: React.FC<ThemedLayoutV2Props> = ({ children }) => {
               )}
             </Space>
 
-            <Dropdown 
-              menu={{ items: userMenuItems }} 
-              placement="bottomRight" 
+            <Dropdown
+              menu={{ items: userMenuItems }}
+              placement="bottomRight"
               trigger={["click"]}
             >
               <Button
                 type="text"
-                style={{ cursor: "pointer", height: "auto", padding: "4px 8px" }}
+                style={{ cursor: "pointer", height: "auto", padding: "4px" }}
                 aria-label={`User menu for ${identity?.name || "User"}`}
                 aria-haspopup="true"
               >
-                <Space>
-                  <Avatar
-                    size="default"
-                    src={identity?.avatar}
-                    icon={!identity?.avatar && <UserOutlined />}
-                    alt={identity?.name || "User avatar"}
-                  />
-                  {!isMobile && (
-                    <Space direction="vertical" size={0}>
-                      <Text strong>{identity?.name || "User"}</Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {identity?.email}
-                      </Text>
-                    </Space>
-                  )}
-                </Space>
+                <Avatar
+                  size="default"
+                  src={identity?.avatar}
+                  style={{ backgroundColor: "#87d068" }}
+                  alt={identity?.name || "User avatar"}
+                >
+                  {!identity?.avatar && (identity?.name?.charAt(0).toUpperCase() || <UserOutlined />)}
+                </Avatar>
               </Button>
             </Dropdown>
           </Header>

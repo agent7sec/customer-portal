@@ -1,20 +1,37 @@
 .skip-links {
   position: absolute;
-  top: -40px;
+  top: 0;
   left: 0;
   z-index: 1000;
 }
 
 .skip-link {
   position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
   background: #1890ff;
   color: white;
   padding: 8px 16px;
   text-decoration: none;
   border-radius: 4px;
+  white-space: nowrap;
 }
 
 .skip-link:focus {
+  position: fixed;
   top: 10px;
   left: 10px;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+  z-index: 1001;
+}
+
+/* Specific offsets for focused skip links to prevent overlap if multiple are focused or during transitions */
+.skip-link:nth-child(2):focus {
+  top: 60px;
 }
